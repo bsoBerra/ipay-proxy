@@ -1,5 +1,8 @@
 package club.facecard.ipayproxy.controller;
 
+import club.facecard.ipayproxy.dto.SlackRequest;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -17,7 +20,7 @@ import java.io.IOException;
 public class IPayProxyController {
 
     @Value("${ipay_url}")
-    private  String iPayUrl;
+    private String iPayUrl;
 
     @Value("${send_to_server}")
     private boolean sendToServer;
@@ -33,14 +36,16 @@ public class IPayProxyController {
 
     private RestTemplate rest = new RestTemplate();
 
+    private ObjectMapper mapper = new ObjectMapper();
+
     @PostMapping
     public HttpEntity<?> createPayment(@RequestBody String jsonBody) throws IOException {
-        return getHttpEntity(jsonBody, jsonBody);
+        return getHttpEntity(jsonBody, iPayUrl);
     }
 
     @PostMapping("/cards")
     public HttpEntity<?> getCards(@RequestBody String jsonBody) throws IOException {
-        return getHttpEntity(jsonBody, jsonBody);
+        return getHttpEntity(jsonBody, iPayUrl);
     }
 
     @PostMapping("/success")
@@ -57,12 +62,19 @@ public class IPayProxyController {
         return ResponseEntity.ok().build();
     }
 
-    private void callback(@RequestBody String jsonBody) {
-        if(sendToServer){
-            getHttpEntity(jsonBody, serverUrl);
-        }
-        if(sendToSlack) {
-            getHttpEntity(jsonBody, slackUrl);
+    private void callback(String jsonBody) {
+        try {
+            if (sendToServer) {
+                getHttpEntity(jsonBody, serverUrl);
+            }
+            if (sendToSlack) {
+                SlackRequest slackRequest = new SlackRequest();
+                slackRequest.setText(jsonBody);
+                String slackMessage = mapper.writeValueAsString(slackRequest);
+                getHttpEntity(slackMessage, slackUrl);
+            }
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -73,7 +85,6 @@ public class IPayProxyController {
         log.info("jsonBody: {}", jsonBody);
         log.info("body: {}", body);
         ResponseEntity<String> stringResponseEntity = rest.exchange(url, HttpMethod.POST, body, String.class);
-        log.info("response status code: {}", stringResponseEntity.getStatusCode());
         log.info("response: {}", stringResponseEntity.getBody());
         log.info("stringResponseEntity: {}", stringResponseEntity);
         return stringResponseEntity;
